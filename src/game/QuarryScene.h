@@ -26,7 +26,7 @@ private:
     int m_scrollX = 0;
     int m_maxScrollX = 0;
 
-    // Static scenery overlays
+    // Static scenery
     struct SceneryItem {
         SDL_Texture* texture = nullptr;
         int cx, cy, w, h;
@@ -38,19 +38,34 @@ private:
     std::unique_ptr<Vehicle> m_crane;
     std::unique_ptr<Vehicle> m_bulldozer;
 
-    // Draggable objects (rocks, gold, etc.)
+    // Front loader animation phases (96 frames segmented)
+    enum class LoaderAction { Idle, Approach, Dig, Scoop, Carry, Dump };
+    LoaderAction m_loaderAction = LoaderAction::Idle;
+    int m_loaderPhaseStart = 0;
+    int m_loaderPhaseEnd = 0;
+
+    // Draggable objects
     struct DraggableObject {
         GameObject obj;
         bool dragging = false;
         float dragOffsetX = 0, dragOffsetY = 0;
         std::string name;
+        bool cleared = false;
     };
     std::vector<DraggableObject> m_objects;
     int m_draggedObject = -1;
 
     Vehicle* m_activeVehicle = nullptr;
 
+    // Completion state
+    int m_objectsCleared = 0;
+    bool m_goldFound = false;
+    bool m_areaComplete = false;
+    float m_completionTimer = 0.0f;
+
     void loadAssets();
     void updateScroll();
     void handleClick(int worldX, int worldY);
+    void setLoaderAction(LoaderAction action);
+    void checkCompletion();
 };

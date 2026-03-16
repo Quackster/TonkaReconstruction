@@ -203,7 +203,7 @@ void GarageScene::applyPaint(int x, int y) {
     }
 }
 
-void GarageScene::update(float dt) {
+void GarageScene::update(float /*dt*/) {
     int mx = m_app.input().mouseX();
     int my = m_app.input().mouseY();
 

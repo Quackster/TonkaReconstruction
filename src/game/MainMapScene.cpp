@@ -2,6 +2,8 @@
 #include "engine/Application.h"
 #include "game/GarageScene.h"
 #include "game/QuarryScene.h"
+#include "game/CityMapScene.h"
+#include "game/TimeCardScene.h"
 #include "game/ActivityScene.h"
 #include <iostream>
 #include <cstdio>
@@ -85,7 +87,7 @@ void MainMapScene::handleEvent(const SDL_Event& event) {
     }
 }
 
-void MainMapScene::update(float dt) {
+void MainMapScene::update(float /*dt*/) {
     int mx = m_app.input().mouseX();
     int my = m_app.input().mouseY();
 
@@ -147,8 +149,14 @@ void MainMapScene::navigateTo(int moduleId) {
         case 1:
             m_app.scenes().pushDeferred(std::make_unique<QuarryScene>(m_app));
             break;
+        case 11:
+            m_app.scenes().pushDeferred(std::make_unique<CityMapScene>(m_app));
+            break;
         case 12:
             m_app.scenes().pushDeferred(std::make_unique<GarageScene>(m_app));
+            break;
+        case 13:
+            m_app.scenes().pushDeferred(std::make_unique<TimeCardScene>(m_app));
             break;
         default:
             m_app.scenes().pushDeferred(std::make_unique<ActivityScene>(m_app, moduleId));

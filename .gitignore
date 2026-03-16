@@ -1,3 +1,27 @@
-/.tonka
-/assets
-/build
+# Original game data (copyrighted, not redistributable)
+/.tonka/
+
+# Extracted assets (copyrighted - regenerate from original disc with tools/)
+/assets/
+
+# Build output
+/build/
+/cmake-build-*/
+
+# IDE files
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# Save files
+tonka_save.dat
+
+# Ghidra reverse engineering artifacts
+/tools/ghidra_project/
+/tools/decompiled*.txt
+
+# OS files
+Thumbs.db
+.DS_Store
