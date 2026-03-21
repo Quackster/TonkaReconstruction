@@ -1,117 +1,96 @@
-# Tonka Construction - Modern Reconstruction
+# Tonka Construction — Compatibility Patch
 
-A modern C++17/SDL2 reconstruction of **Tonka Construction** (1996), reverse-engineered from the original game files. The original 16-bit Windows 3.1 game cannot run on modern 64-bit systems; this project rebuilds it as a native application.
+Run the original **Tonka Construction** (1996) on modern 64-bit Windows by replacing the obsolete WinG graphics library with a lightweight shim DLL.
 
-> **Legal notice:** This project contains no copyrighted assets. You must supply your own copy of the original game disc to extract assets. The extraction tools and game engine source code are original work.
+> **Legal notice:** This project contains no copyrighted assets. You must supply your own copy of the original game disc. Only the patch code and tooling are original work.
 
-## Prerequisites
+## How It Works
 
-### Windows (MSYS2 / MinGW64)
+The original `TONKA.EXE` is a 32-bit Windows PE executable (Borland C++, 1999 re-release). It runs fine under WOW64 on 64-bit Windows, except for two problems:
 
-1. Install [MSYS2](https://www.msys2.org/)
-2. Open the **MSYS2 MinGW64** terminal and install dependencies:
+1. **WING32.dll** — The game uses the WinG graphics library (1994), which isn't included with modern Windows. Our shim DLL implements the same 4 functions using standard GDI calls (`CreateDIBSection`, `BitBlt`, `SetDIBColorTable`).
 
-```bash
-pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake \
-          mingw-w64-x86_64-SDL2 mingw-w64-x86_64-SDL2_image \
-          mingw-w64-x86_64-SDL2_mixer mingw-w64-x86_64-SDL2_ttf
-```
+2. **Tonka.ini path** — The game calls `GetPrivateProfileStringA("Tonka.ini")` with a bare filename, which searches the Windows directory instead of the game directory. Our DLL patches this at load time via IAT hooking, redirecting INI lookups to the EXE's own directory.
 
-3. Install Python 3.10+ with [Pillow](https://pypi.org/project/Pillow/):
+## Quick Start
 
-```bash
-pip install Pillow
-```
+### 1. Place the original game files
 
-## Obtaining the Original Game Files
-
-You need the original **Tonka Construction** CD-ROM (1996). The files can also be found on archive.org if you own a license.
-
-1. Mount or extract the CD contents
-2. Copy the entire disc into a `.tonka/` directory at the project root:
+Copy the contents of your Tonka Construction CD into `.tonka/` at the project root:
 
 ```
 TonkaReconstruction/
   .tonka/
-    AUTORUN.INF
-    PLAY.EXE
-    SETUP.EXE
-    TONKA.TXT
     DATA/
-      MODULE01.DAT
-      MODULE02.DAT
-      ...
       TONKA.EXE
-      SNDS/
-        *.WAV
+      CW3215.DLL
+      MODULE01.DAT ... MODULE99.DAT
+      AMBNT*.WAV, SFX*.WAV, LOAD.WAV
+      SNDS/*.WAV
+      ...
+    WING/
+      WING32.DL_
     ...
 ```
 
-The `.tonka/` directory is gitignored and will not be committed.
+The `.tonka/` directory is gitignored.
 
-## Extracting Assets
+### 2. Build the patch
 
-From the project root, run the Python extraction tools to convert the proprietary MODULE DAT archives into standard PNG/WAV/JSON files:
+Requires MSYS2 with the 32-bit MinGW toolchain:
 
 ```bash
-# 1. Extract all images (backgrounds + overlay sprites) from MODULE*.DAT
-python tools/dat_extractor.py .tonka/DATA/ -o assets/images -v
+# Install 32-bit GCC (only needed once)
+pacman -S mingw-w64-i686-gcc
 
-# 2. Parse BIN/POS data files (vehicle paths, animation frames, object positions)
-python tools/bin_parser.py .tonka/DATA/ -o assets/data
-
-# 3. Copy audio assets (already standard WAV format, no conversion needed)
-mkdir -p assets/audio/ambient assets/audio/sfx assets/audio/snds
-cp .tonka/DATA/AMBNT*.WAV assets/audio/ambient/
-cp .tonka/DATA/SFX*.WAV   assets/audio/sfx/
-cp .tonka/DATA/SNDS/*.WAV  assets/audio/snds/
-cp .tonka/DATA/LOAD.WAV    assets/audio/
-
-# 4. Export overlay position data for each module (used by the engine at runtime)
-python tools/export_module_data.py
+# Build the shim DLL
+./patch/build.sh
 ```
 
-Step 4 uses a helper script. If it doesn't exist yet, the `dat_extractor.py` output includes `metadata.json` per module which the engine can also use. Alternatively, this data is generated automatically during the build's asset copy step.
+This produces `patch/WING32.dll` — a 32-bit DLL that replaces the original WinG library.
 
-After extraction you should have:
-- `assets/images/` - ~2,800 PNG sprites + 36 backgrounds
-- `assets/audio/` - ~66 WAV audio files
-- `assets/data/` - ~76 JSON data files
-
-The `assets/` directory is gitignored since it contains copyrighted material.
-
-## Building
-
-All commands should be run from the **MSYS2 MinGW64** terminal:
+### 3. Launch the game
 
 ```bash
-# Configure
-mkdir build && cd build
-cmake -G "MinGW Makefiles" ..
+# From an MSYS2 terminal
+./patch/launch.bat
 
-# Build
-mingw32-make -j4
-
-# The build automatically copies assets/ into the build directory
+# Or double-click patch/launch.bat from Explorer
 ```
 
-### Bundling for Distribution
+The launcher copies `WING32.dll` into the game directory and starts `TONKA.EXE`. On first run, the DLL auto-creates `Tonka.ini` and a `saves/` directory next to the executable.
 
-To create a standalone package (still requires users to supply their own assets):
+## What the Patch Does
 
-```bash
-# From the build directory after a successful build:
-mkdir -p TonkaConstruction-dist
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| Missing WING32.dll | WinG library not on modern Windows | Shim DLL maps 4 WinG functions to GDI equivalents |
+| "No Local Directory, Please Run Setup" | `GetPrivateProfileStringA` looks for `Tonka.ini` in Windows directory | IAT hook redirects to EXE directory |
+| No Tonka.ini or saves folder | Original installer created these | DLL auto-creates both on first load |
 
-# Copy the executable
-cp TonkaConstruction.exe TonkaConstruction-dist/
+### WinG → GDI Function Mapping
 
-# Copy required DLLs (from MSYS2 MinGW64)
-ldd TonkaConstruction.exe | grep mingw64 | awk '{print $3}' | \
-  xargs -I{} cp {} TonkaConstruction-dist/
+| WinG Function | GDI Equivalent |
+|---------------|----------------|
+| `WinGCreateDC()` | `CreateCompatibleDC(NULL)` |
+| `WinGCreateBitmap(hdc, info, bits)` | `CreateDIBSection(hdc, info, DIB_RGB_COLORS, bits, 0, 0)` |
+| `WinGBitBlt(dst, x, y, w, h, src, sx, sy)` | `BitBlt(dst, x, y, w, h, src, sx, sy, SRCCOPY)` |
+| `WinGSetDIBColorTable(hdc, start, n, colors)` | `SetDIBColorTable(hdc, start, n, colors)` |
 
-# Copy assets (user must generate these from their own disc)
-cp -r assets TonkaConstruction-dist/
+## Project Structure
+
+```
+patch/
+  wing32.c          WING32.dll source — WinG shim + IAT hook
+  wing32.def        DLL export definitions
+  build.sh          Build script (produces 32-bit WING32.dll)
+  launch.bat        Deploys shim and launches game
+tools/
+  dat_extractor.py  MODULE*.DAT → PNG + metadata JSON
+  bin_parser.py     PATH/CONT/OBJ/POS BIN → JSON
+  export_module_data.py  Overlay position data → per-module JSON
+  ghidra_scripts/   Ghidra decompilation automation
+  decompiled_raw.txt  Full Ghidra decompilation of TONKA.EXE (223 functions)
 ```
 
 ## Controls
@@ -120,92 +99,42 @@ cp -r assets TonkaConstruction-dist/
 |-------|--------|
 | **Mouse click** | Navigate, select vehicles, interact with objects |
 | **Escape** | Go back to previous screen / exit |
-| **H** or **F1** | Open help screen (in activity areas) |
-| **Arrow keys** | Scroll viewport (in wide areas like Quarry, Desert) |
 
-## Project Structure
+## Asset Extraction Tools
 
+The `tools/` directory contains Python scripts for extracting and converting the game's proprietary data formats into standard files (PNG, WAV, JSON). These are useful for analysis and for any future reconstruction work.
+
+```bash
+pip install Pillow
+
+# Extract images from MODULE*.DAT archives
+python tools/dat_extractor.py .tonka/DATA/ -o assets/images -v
+
+# Parse binary data files (vehicle paths, animation frames, positions)
+python tools/bin_parser.py .tonka/DATA/ -o assets/data
+
+# Copy audio (already standard WAV)
+mkdir -p assets/audio/{ambient,sfx,snds}
+cp .tonka/DATA/AMBNT*.WAV assets/audio/ambient/
+cp .tonka/DATA/SFX*.WAV   assets/audio/sfx/
+cp .tonka/DATA/SNDS/*.WAV  assets/audio/snds/
+
+# Export overlay position metadata
+python tools/export_module_data.py
 ```
-src/
-  main.cpp                  Entry point
-  engine/
-    Application.h/cpp       SDL2 init, main loop, subsystem management
-    Renderer.h/cpp          640x480 logical resolution, scaled rendering
-    AssetManager.h/cpp      Texture and sound caching
-    AudioManager.h/cpp      SDL2_mixer: ambient loops + SFX channels
-    InputManager.h/cpp      Mouse input with logical coordinate mapping
-    SceneManager.h/cpp      Stack-based scene transitions
-    TextRenderer.h/cpp      SDL2_ttf text rendering
-  game/
-    SignInScene.h/cpp        Player name entry (MODULE15)
-    MainMapScene.h/cpp       Hub world with area navigation (MODULE10)
-    QuarryScene.h/cpp        Quarry with vehicle mechanics (MODULE01)
-    GarageScene.h/cpp        Vehicle spray painting (MODULE12)
-    CityMapScene.h/cpp       City sub-hub with 3 sites (MODULE11)
-    TimeCardScene.h/cpp      Progress tracking / quit (MODULE13)
-    ActivityScene.h/cpp      Data-driven scene for all other areas
-  objects/
-    GameObject.h/cpp         Animated sprite with hit testing
-    Vehicle.h/cpp            Path-following vehicle with state machine
-  data/
-    ModuleData.h             MODULE DAT position data loader
-    GameState.h              Save/load progression tracking
-tools/
-  dat_extractor.py          MODULE*.DAT -> PNG + metadata JSON
-  bin_parser.py             PATH/CONT/OBJ/POS BIN -> JSON
-  export_module_data.py     Overlay position data -> per-module JSON
-  ghidra_scripts/           Ghidra decompilation helpers
-```
-
-## TODO
-
-The following items are needed to fully match the original game's behavior and appearance:
-
-### Gameplay Mechanics
-- [ ] Per-area scripted vehicle sequences (cement pouring in City, snow rescue in Avalanche, tunnel digging in Desert)
-- [ ] Overlay visibility state machine: type 1 overlays with `flag=8` should be hidden initially and revealed by game events (e.g., clicking flashing arrows summons vehicles)
-- [ ] Crane claw physics: position claw above target, click to drop/grab (currently simplified to drag-and-drop)
-- [ ] Front loader dig/scoop/dump cycle at specific targets (black pile, red pile, gold wall)
-- [ ] Bulldozer push mechanics: push rocks/brush in movement direction
-- [ ] Cement truck pour animation for floors and foundation walls
-- [ ] Dump truck material transport between locations
-- [ ] Vehicle approach/departure driving animations along PATH*.BIN waypoints when entering/leaving areas
-- [ ] Decoration placement phase after area completion (arrows mark valid spots, some decorations animate)
-- [ ] Area-specific completion criteria (from TONKA.TXT hints)
-
-### UI & Navigation
-- [ ] Options menu overlay (MODULE10 overlay 037: Time Clock, Go Back, Clipboard, Phone buttons)
-- [ ] Proper cursor state machine (invisible during narration, hourglass during animations, vehicle-specific cursors)
-- [ ] Sign-in screen: multiple save slots with numbered time card grid
-- [ ] Time card cell stamps should show small certificate thumbnails for completed areas
-
-### Audio & Narration
-- [ ] Character voice dialogue playback (Tonka Joe, Rusty, Miko) - voice clips embedded in MODULE DAT animation sequences
-- [ ] SFX1-SFX7 mapped to specific game events
-- [ ] LOAD.WAV playback during scene transitions
-
-### Video & Animation
-- [ ] Intro movie (MOVIE1.MVE - proprietary "MVE4" format, 640x480, 22050 Hz audio)
-- [ ] Full-screen driving animation sequences (type 1 overlays with flag=8, 640x480, 50-150+ frames)
-- [ ] PCX panorama rendering (PAN10.PCX)
-- [ ] CONTDN/CONTUP frame index tables for scrolling background animation
-
-### Data
-- [ ] Vehicle interior scenes (MODULE71, MODULE81, MODULE91) - monster truck, dozer, grader cab views
-- [ ] M##OBJ##.BIN object bounding box / hotspot definitions per area
-- [ ] M##O##A.BIN additional object path data
 
 ## Technical Details
 
-The original game uses a custom engine (not Macromedia Director) with:
-- **WinG** for fast DIB blitting (replaced by SDL2 hardware rendering)
-- **Proprietary MODULE DAT archives** containing 8-bit indexed images with BGRA palettes
-- **PackBits RLE compression** for overlay sprites (decompression routine at VA 0x0042EA66)
-- **22050 Hz WAV audio** for ambient and SFX (directly usable, no conversion needed)
+The original game engine (not Macromedia Director) uses:
+- **WinG** for fast 8-bit DIB blitting (256-color palette mode)
+- **Proprietary MODULE DAT archives** containing indexed images with BGRA palettes and PackBits RLE compression
+- **Win32 waveOut API** for 22050 Hz mono PCM audio playback
+- **Borland C++ runtime** (`CW3215.DLL`)
 - Transparent color: palette index `0x0F`
+- Logical resolution: 640×480
 
-The MODULE DAT format was reverse-engineered using Ghidra headless decompilation of `TONKA.EXE` (32-bit PE, Borland C++, Oct 1999 re-release).
+Reverse-engineered using Ghidra from `TONKA.EXE` (32-bit PE, Borland C++, October 1999 re-release).
 
 ## License
 
-The source code in this repository is provided for educational and preservation purposes. The original Tonka Construction game is copyrighted by Hasbro/Media Station. No copyrighted assets are included in this repository.
+The source code in this repository is provided for educational and preservation purposes. The original Tonka Construction game is copyrighted by Hasbro/Media Station. No copyrighted assets are included.
