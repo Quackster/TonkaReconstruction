@@ -9,7 +9,9 @@
  * 4) Hooks CreateFileA to ensure game files are found even with
  *    long working directory paths (prevents buffer overflows in the
  *    game's internal error-message sprintf).
- * 5) Hooks _getcwd (Borland CRT) so the game's resource manager
+ * 5) Hooks SetWindowPos to replace HWND_TOPMOST with HWND_TOP,
+ *    making the game behave as borderless windowed (alt-tab friendly).
+ * 6) Hooks _getcwd (Borland CRT) so the game's resource manager
  *    stores a short base path, avoiding overflow of its fixed-size
  *    error buffer at 0x004328bc into the resource-manager pointer
  *    at 0x0043290c.
@@ -173,6 +175,30 @@ static char* __cdecl Hooked_getcwd(char *buf, int maxlen)
 }
 
 /* ------------------------------------------------------------------ */
+/*  SetWindowPos hook — prevent HWND_TOPMOST for borderless windowed  */
+/*                                                                    */
+/*  The game sets its main window to HWND_TOPMOST, which prevents     */
+/*  alt-tab from bringing other windows in front.  Replacing it with  */
+/*  HWND_TOP keeps the same z-order behaviour on creation but allows  */
+/*  normal window switching.                                          */
+/* ------------------------------------------------------------------ */
+
+typedef BOOL (WINAPI *PFN_SetWindowPos)(
+    HWND, HWND, int, int, int, int, UINT);
+
+static PFN_SetWindowPos g_origSetWindowPos;
+
+static BOOL WINAPI Hooked_SetWindowPos(
+    HWND hWnd, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags)
+{
+    if (hWndInsertAfter == HWND_TOPMOST) {
+        Log("SetWindowPos: replacing HWND_TOPMOST with HWND_TOP\n");
+        hWndInsertAfter = HWND_TOP;
+    }
+    return g_origSetWindowPos(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+}
+
+/* ------------------------------------------------------------------ */
 /*  IAT patching                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -226,6 +252,9 @@ static void PatchIAT(void)
     PatchIATEntry("KERNEL32.dll", "CreateFileA",
         (FARPROC)Hooked_CreateFileA,
         (FARPROC*)&g_origCreateFileA);
+    PatchIATEntry("USER32.dll", "SetWindowPos",
+        (FARPROC)Hooked_SetWindowPos,
+        (FARPROC*)&g_origSetWindowPos);
     PatchIATEntry("CW3215.DLL", "_getcwd",
         (FARPROC)Hooked_getcwd,
         (FARPROC*)&g_orig_getcwd);
